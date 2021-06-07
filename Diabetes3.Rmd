@@ -1,0 +1,160 @@
+---
+title: "Diabetes3"
+author: "Colin White"
+date: "4/1/2021"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##Clean and load data
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(bestglm)
+library(car)
+library(knitr)
+library(pROC)
+
+setwd("~/Desktop/1A School/1A Winter 2021/STAT330/HW8")
+
+rm(list = ls()) #### delete all variables
+par(mfrow=c(1,1))
+
+diabetes = read.table("fileDownload.txt", header=TRUE)
+flag = which(apply(diabetes[,2:6],1,function(x){any(x == 0 )}))
+diabetes_use = diabetes[-flag,]
+
+rm(diabetes)
+attach(diabetes_use)
+
+```
+
+##question 1
+
+##question 2
+```{r}
+scatter.smooth(insulin,diabetes)
+scatter.smooth(glucose,diabetes)
+scatter.smooth(age,diabetes)
+
+ggplot(diabetes_use,aes(x=insulin,y=as.numeric(diabetes)-1)) + geom_jitter(width=.5,height=.1) + 
+  geom_smooth()
+
+ggplot(diabetes_use,aes(x=glucose,y=as.numeric(diabetes)-1)) + geom_jitter(width=.5,height=.1) + 
+  geom_smooth()
+
+ggplot(diabetes_use,aes(x=age,y=as.numeric(diabetes)-1)) + geom_jitter(width=.5,height=.1) + 
+  geom_smooth()
+
+```
+
+#question 3
+```{r}
+
+
+var.select  = bestglm(diabetes_use,IC = 'AIC', family=binomial,method="exhaustive")
+var.select$BestModel
+best.model = var.select$BestModel
+```
+
+#question 4
+```{r}
+avPlots(best.model)
+```
+
+#problem 5 
+```{r}
+CI = confint(best.model)
+
+kable(CI)
+kable(exp(CI)) # actual conf
+kable(100*(exp(CI) - 1))
+```
+
+#problem 6
+```{r}
+my.preds = predict.glm(best.model, type="response")
+cut.offs = seq(.1,.9,length = 100)
+mis.class = numeric(length(cut.offs))
+
+for(i in 1:length(cut.offs)){
+  cutoff = cut.offs[i]
+  classify = ifelse(my.preds>cutoff,1,0)
+  mis.class[i] = mean(classify != diabetes_use$diabetes)
+}
+
+plot(cut.offs, mis.class,type="l")
+
+cutoff_use = cut.offs[which.min(mis.class)]
+cutoff_use
+```
+
+##problem 7
+```{r}
+
+r2 = 1 - best.model$deviance/best.model$null.deviance
+r2
+pred.class = ifelse(predict.glm(best.model,type="response")>cutoff_use,1,0)
+conf.mat = table(predicted = pred.class,True = diabetes_use$diabetes)
+kable(conf.mat)
+
+sens = conf.mat[2,2] /(conf.mat[2,2]+ conf.mat[1,2])
+spec = conf.mat[1,1] /(conf.mat[2,1]+ conf.mat[1,1])
+ppv = conf.mat[2,2] /(conf.mat[2,2]+ conf.mat[2,1])
+npv = conf.mat[1,1] /(conf.mat[1,1]+ conf.mat[1,2])
+
+sens
+spec
+ppv
+npv
+```
+
+
+```{r}
+my.roc = roc(diabetes_use$diabetes,my.preds)
+plot(my.roc,legacy.axes=TRUE)
+auc(my.roc)
+```
+
+##problem8
+```{r}
+
+n.cv = 1000
+n.test = round(.2 * nrow(diabetes_use))
+
+sens <- spec <- ppv <- npv <- numeric(n.cv)
+
+for(i in 1:n.cv){
+  idx_test = sample(1:nrow(diabetes_use),n.test)
+  train.data = diabetes_use[-idx_test,]
+  test.data = diabetes_use[idx_test,]
+  
+  train.mod = glm(diabetes ~pregnant+ glucose+bmi+pedigree+age,
+                  data = train.data, family = binomial)
+  pred = predict.glm(train.mod,newdata = test.data, type = "response")
+  pred.class = ifelse(pred > cutoff_use, 1, 0)
+  conf.mat = table(predicted = pred.class, True = test.data$diabetes)
+
+  sens[i] = conf.mat[2,2] /(conf.mat[2,2]+ conf.mat[1,2])
+  spec[i] = conf.mat[1,1] /(conf.mat[2,1]+ conf.mat[1,1])
+  ppv[i] = conf.mat[2,2] /(conf.mat[2,2]+ conf.mat[2,1])
+  npv[i] = conf.mat[1,1] /(conf.mat[1,1]+ conf.mat[1,2])
+}
+
+print("Sensitivity is"); mean(sens)
+mean(sens)
+mean(spec)
+mean(ppv)
+mean(npv)
+```
+
+#9
+```{r}
+predict.glm(best.model,newdata = data.frame(pregnant=1, glucose=90,
+diastolic=62, triceps=18, insulin=59, bmi=25.1, pedigree=1.268, age=25),type = "response")
+```
+
+
